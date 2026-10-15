@@ -1,14 +1,12 @@
-name: CI
+name: Python 3.15 campaign validation
 
 on:
   push:
     branches:
-      - "**"
-    tags:
-      - v*
-  pull_request:
-    branches:
-      - master
+      - ci/validate-python315-runtime-20261015
+
+permissions:
+  contents: read
 
 jobs:
   build-and-test-cpp-x86_64:
@@ -23,6 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          persist-credentials: false
           submodules: recursive
 
       - name: Install Intel oneAPI
@@ -79,6 +78,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          persist-credentials: false
           submodules: recursive
 
       - name: Install Intel oneAPI
@@ -130,6 +130,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          persist-credentials: false
           submodules: recursive
 
       - name: Install Intel oneAPI
@@ -188,6 +189,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          persist-credentials: false
           submodules: recursive
 
       - name: Build with OpenBLAS and Ruy
@@ -248,6 +250,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          persist-credentials: false
           submodules: recursive
 
       - name: Cache MKL and oneDNN (Windows)
@@ -294,6 +297,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          persist-credentials: false
           submodules: recursive
 
       - name: Cache MKL and oneDNN (Windows)
@@ -371,6 +375,8 @@ jobs:
           python-version: "3.12"
 
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Prepare test environment
         shell: bash
@@ -440,6 +446,8 @@ jobs:
             wheel: "*macosx*x86_64.whl"
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
@@ -493,6 +501,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
@@ -530,6 +540,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -558,7 +570,7 @@ jobs:
 
 
   publish-python-wheels-on-pypi:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
+    if: ${{ false }} # Disposable validation never publishes.
     needs:
       - build-and-test-cpp-x86_64
       - build-and-test-cpp-x86_64-address_sanitizer
@@ -603,6 +615,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          persist-credentials: false
           submodules: recursive
 
       - name: Show disk and docker usage (before cleanup)
@@ -633,7 +646,7 @@ jobs:
           ./docker/build_all.sh latest 0 ${{ matrix.gpu }}
 
       - name: Login to DockerHub
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
+        if: ${{ false }} # Disposable validation never publishes.
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -641,7 +654,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push Docker images
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
+        if: ${{ false }} # Disposable validation never publishes.
         run: |
           ./docker/build_all.sh ${GITHUB_REF##*/v} 1 ${{ matrix.gpu }}
 
@@ -651,9 +664,11 @@ jobs:
     needs: [check-python-style, build-python-wheels, build-python-wheels-rocm, test-python-wheels]
 
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
@@ -677,13 +692,13 @@ jobs:
           python generate.py python
           sphinx-build . build
       - name: Deploy docs
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
+        if: ${{ false }} # Disposable validation never publishes.
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: docs/build
           clean: true
       - name: Download ROCm wheels and zip for release
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
+        if: ${{ false }} # Disposable validation never publishes.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -702,7 +717,7 @@ jobs:
           rm -rf temp-windows
 
       - name: Create GitHub Release
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
+        if: ${{ false }} # Disposable validation never publishes.
         uses: softprops/action-gh-release@v2
         with:
           files: release-zips/*.zip
