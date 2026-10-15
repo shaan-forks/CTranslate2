@@ -413,38 +413,73 @@ jobs:
           pytest -v python/tests/ --ignore=python/tests/test_fairseq.py --ignore=python/tests/test_opennmt_py.py --ignore=python/tests/test_opennmt_tf.py
 
 
-  test-python314-native-finalizer:
-    # CPython 3.13+ frees heap-type tp_doc via PyMem_Free. An older pybind11
-    # uses PyObject_MALLOC, which can abort during interpreter shutdown.
+  test-python-native-runtime:
+    # Exercise the pybind11 bindings from installed wheels on new CPython versions.
+    # Keep the broader Python 3.12 converter suite in test-python-wheels.
     needs: [build-python-wheels]
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.14", "3.15"]
+        platform:
+          - os: ubuntu-22.04
+            artifact: python-wheels-Linux-auto64
+            wheel: "*manylinux*x86_64.whl"
+          - os: ubuntu-22.04-arm
+            artifact: python-wheels-Linux-aarch64
+            wheel: "*manylinux*_aarch64.whl"
+          - os: windows-2022
+            artifact: python-wheels-Windows-auto64
+            wheel: "*win*amd64.whl"
+          - os: macos-15
+            artifact: python-wheels-macOS-arm64
+            wheel: "*macosx*arm64.whl"
+          - os: macos-15-intel
+            artifact: python-wheels-macOS-x86_64
+            wheel: "*macosx*x86_64.whl"
     steps:
-      - name: Set up Python 3.14
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
-
-      - name: Download Linux x86-64 release wheels
-        uses: actions/download-artifact@v4
+          python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@v4
         with:
-          name: python-wheels-Linux-auto64
+          name: ${{ matrix.platform.artifact }}
           path: python/wheelhouse
-
-      - name: Require CPython 3.14 wheel and a clean debug allocator exit
+      - name: Install the built wheel and runtime test dependencies
         shell: bash
+        env:
+          WHEEL_PATTERN: ${{ matrix.platform.wheel }}
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          wheels=(python/wheelhouse/*-cp314-cp314-manylinux*x86_64.whl)
-          if (( ${#wheels[@]} != 1 )); then
-            echo "Expected exactly one CPython 3.14 Linux x86-64 wheel" >&2
-            exit 1
+          wheel=$(python -c '
+          import glob, os, sys
+          tag = "cp%d%d" % sys.version_info[:2]
+          wheels = glob.glob("python/wheelhouse/*-%s-%s-%s" % (tag, tag, os.environ["WHEEL_PATTERN"]))
+          assert len(wheels) == 1, wheels
+          print(wheels[0])')
+          python -m pip install --only-binary=:all: \
+            numpy==2.5.4 pytest==9.1.1 pyyaml==6.0.3 "$wheel"
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            python -m pip install --only-binary=:all: wurlitzer==3.1.1
           fi
-          python -m pip install "${wheels[0]}"
-          # Exit status is essential: the affected wheel imports successfully
-          # but aborts with exit 134 while Python releases heap types.
-          python -X dev -W error::ResourceWarning \
-            -c 'import ctranslate2; print(ctranslate2.__version__)'
+          python -m pip freeze
+      - name: Require an installed native extension and a clean debug allocator exit
+        working-directory: ${{ runner.temp }}
+        run: >-
+          python -X dev -W error::ResourceWarning -c
+          "import pathlib, sys, ctranslate2, ctranslate2._ext;
+          root = pathlib.Path(sys.prefix).resolve();
+          paths = [pathlib.Path(m.__file__).resolve() for m in (ctranslate2, ctranslate2._ext)];
+          assert all(p.is_relative_to(root) for p in paths), paths;
+          print(sys.version, *paths, sep='\n')"
+      - name: Test translation, callbacks, async results, and array ownership
+        working-directory: ${{ runner.temp }}
+        run: >-
+          python -m pytest -v
+          "${{ github.workspace }}/python/tests/test_translator.py"
+          "${{ github.workspace }}/python/tests/test_storage_view.py"
 
   test-legacy-converters:
     needs: [build-python-wheels]
@@ -524,7 +559,7 @@ jobs:
       - build-and-test-cpp-arm64
       - build-python-wheels
       - test-python-wheels
-      - test-python314-native-finalizer
+      - test-python-native-runtime
       - test-legacy-converters
       - check-python-style
     runs-on: ubuntu-22.04

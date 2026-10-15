@@ -19,7 +19,14 @@ import ctranslate2
 
 def _get_model_path():
     return os.path.join(
-        test_utils.get_data_dir(), "models", "v2", "aren-transliteration"
+        os.path.dirname(__file__),
+        "..",
+        "..",
+        "tests",
+        "data",
+        "models",
+        "v2",
+        "aren-transliteration",
     )
 
 
