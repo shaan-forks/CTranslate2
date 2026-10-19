@@ -260,7 +260,7 @@ jobs:
           key: windows-mkl-onednn-${{ hashFiles('python/tools/prepare_build_environment_windows.sh') }}
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.2.1
+        uses: pypa/cibuildwheel@v4.3.3
         with:
           package-dir: python
           output-dir: python/wheelhouse
@@ -272,6 +272,8 @@ jobs:
           CIBW_BEFORE_ALL_MACOS: python/tools/prepare_build_environment_macos.sh
           CIBW_BEFORE_ALL_WINDOWS: bash python/tools/prepare_build_environment_windows.sh
           CIBW_BEFORE_BUILD: pip install -r python/install_requirements.txt
+          # The preparation script already copies the required DLLs into the package.
+          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: ""
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
           CIBW_ARCHS: ${{ matrix.arch }}
@@ -304,7 +306,7 @@ jobs:
           key: windows-mkl-onednn-${{ hashFiles('python/tools/prepare_build_environment_windows_rocm.sh') }}
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.2.1
+        uses: pypa/cibuildwheel@v4.3.3
         with:
           package-dir: python
           output-dir: python/wheelhouse
@@ -314,6 +316,8 @@ jobs:
           CIBW_BEFORE_ALL_LINUX: python/tools/prepare_build_environment_linux_rocm.sh
           CIBW_BEFORE_ALL_WINDOWS: bash python/tools/prepare_build_environment_windows_rocm.sh
           CIBW_BEFORE_BUILD: pip install -r python/install_requirements.txt
+          # The preparation script already copies the required DLLs into the package.
+          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: ""
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           CIBW_ARCHS: auto64
           CIBW_SKIP: "*-musllinux_*"
@@ -409,16 +413,19 @@ jobs:
           pytest -v python/tests/ --ignore=python/tests/test_fairseq.py --ignore=python/tests/test_opennmt_py.py --ignore=python/tests/test_opennmt_tf.py
 
 
-  test-python314-native-finalizer:
+  test-python-native-finalizer:
     # CPython 3.13+ frees heap-type tp_doc via PyMem_Free. An older pybind11
     # uses PyObject_MALLOC, which can abort during interpreter shutdown.
     needs: [build-python-wheels]
     runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        python-version: ["3.14", "3.15"]
     steps:
-      - name: Set up Python 3.14
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: ${{ matrix.python-version }}
 
       - name: Download Linux x86-64 release wheels
         uses: actions/download-artifact@v4
@@ -426,14 +433,17 @@ jobs:
           name: python-wheels-Linux-auto64
           path: python/wheelhouse
 
-      - name: Require CPython 3.14 wheel and a clean debug allocator exit
+      - name: Require CPython ${{ matrix.python-version }} wheel and a clean debug allocator exit
         shell: bash
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
         run: |
           set -euo pipefail
           shopt -s nullglob
-          wheels=(python/wheelhouse/*-cp314-cp314-manylinux*x86_64.whl)
+          tag="cp${PYTHON_VERSION/./}"
+          wheels=(python/wheelhouse/*-"$tag"-"$tag"-manylinux*x86_64.whl)
           if (( ${#wheels[@]} != 1 )); then
-            echo "Expected exactly one CPython 3.14 Linux x86-64 wheel" >&2
+            echo "Expected exactly one CPython $PYTHON_VERSION Linux x86-64 wheel" >&2
             exit 1
           fi
           python -m pip install "${wheels[0]}"
@@ -520,7 +530,7 @@ jobs:
       - build-and-test-cpp-arm64
       - build-python-wheels
       - test-python-wheels
-      - test-python314-native-finalizer
+      - test-python-native-finalizer
       - test-legacy-converters
       - check-python-style
     runs-on: ubuntu-22.04
